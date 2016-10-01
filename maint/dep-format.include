@@ -1,0 +1,16 @@
+use strict;
+
+my $eumm_version = eval $ExtUtils::MakeMaker::VERSION;
+
+sub dependencies {
+  my %spec = @_;
+  %{ $spec{build} } = (%{ $spec{build} }, %{ delete $spec{test} })
+    if $eumm_version < 6.63_03;
+  %{ $spec{runtime} } = (%{ $spec{runtime} }, %{ delete $spec{build} })
+    if $eumm_version < 6.55_01;
+  return(
+    keys(%{ $spec{test}}) ? (TEST_REQUIRES => $spec{test}) : (),
+    keys(%{ $spec{build}}) ? (BUILD_REQUIRES => $spec{build}) : (),
+    keys(%{ $spec{runtime}}) ? (PREREQ_PM => $spec{runtime}) : (),
+  );
+}
