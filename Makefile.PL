@@ -19,6 +19,7 @@ WriteMakefile(
     test => {
       'Test::More' => '1.001014',
       'Test::Fatal' => '0.014',
+      'Test::Warnings' => '0.021',
     },
   ),
 );

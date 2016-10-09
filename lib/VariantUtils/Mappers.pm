@@ -3,42 +3,62 @@ package VariantUtils::Mappers;
 
 use Carp qw( croak );
 use Sub::Quote qw( quote_sub quotify );
+use VariantUtils::_Gen qw( :all );
 
 use namespace::clean;
 
 sub import {
   my ($package, @names) = @_;
   my $target = caller;
+  my $reexport;
+  my @symbols;
   for my $name (@names) {
     croak $package.q{: Undefined mapper name in import list}
       unless defined $name;
+    $reexport = 1, next
+      if $name eq -reexport;
     croak $package.qq{: Invalid mapper name '$name' in import list}
       unless $name =~ m{\A[a-z_0-9]+\z}i;
-    my $mapper = '_map_'.$name;
-    my $code = quote_sub(
-      join(';',
-        sprintf(q{Carp::croak('%s: Invalid variant value') unless %s},
-          '$'.$mapper,
-          q{ref($_[0]) eq 'ARRAY' and defined $_[0]->[0]},
-        ),
-        sprintf(q{Carp::croak('%s: Expected a code reference') unless %s},
-          '$'.$mapper,
-          q{ref($_[1]) eq 'CODE'},
-        ),
-        sprintf(q{return %s if %s},
-          sprintf(q{[%s, $_[1]->(@{ $_[0] }[1 .. $#{ $_[0] }])]},
-            quotify($name),
+    for my $set (
+      ['map_' => \&gen_apply_map_values],
+      ['fmap_' => \&gen_apply_map_values_into_variant],
+    ) {
+      my ($prefix, $apply) = @$set;
+      my $mapper = $prefix.$name;
+      push @symbols, '$_'.$mapper;
+      my $code = quote_sub(
+        join(';',
+          gen_assert_variant($mapper, '$_[0]'),
+          gen_assert($mapper, q{ref($_[1]) eq 'CODE'},
+            q{Expected a code reference},
           ),
-          sprintf(q{$_[0]->[0] eq %s}, quotify($name)),
+          sprintf(q{if (%s) { %s }},
+            sprintf(q{$_[0]->[0] eq %s}, quotify($name)),
+            join '; ',
+            sprintf(q{my $new = %s}, $apply->(
+              '$_[0]', '$_[1]',
+              name => $mapper,
+              descr => quotify('callback'),
+            )),
+            gen_assert($mapper, gen_check_variant('$new'),
+              q{Callback did not return a valid variant},
+            ),
+            q{return $new},
+          ),
+          q{return $_[0]},
         ),
-        q{return $_[0]},
-      ),
-    );
-    do {
-      no strict 'refs';
-      *{ $target.'::'.$mapper } = \$code;
-    };
+      );
+      do {
+        no strict 'refs';
+        *{ $target.'::_'.$mapper } = \$code;
+      };
+    }
   }
+  do {
+    no strict 'refs';
+    push @{ $target.'::EXPORT_OK' }, @symbols;
+    push @{ ${ $target.'::EXPORT_TAGS' }{all} ||= [] }, @symbols;
+  };
 }
 
 1;
@@ -61,8 +81,11 @@ VariantUtils::Mappers - Generate per-variant mapper functions
 
 =head1 DESCRIPTION
 
-This module can be used to generate C<$_map_*> functions for a list
-of provided variant tags.
+This module can be used to generate C<$_map_*> and C<$_fmap_*> functions
+for a list of provided variant tags.
+
+An optional C<-reexport> flag in the import list will add the generated
+variables to C<@EXPORT_OK> and C<$EXPORT_TAGS{all}>.
 
 =head1 SEE ALSO
 
